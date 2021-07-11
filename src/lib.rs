@@ -21,6 +21,9 @@
 //! trait in a way that is optimized for assets that are expected to be traded
 //! frequently.
 //!
+//! This pallet also implements the [`LockableUniqueAssets`](./nft/trait.LockableUniqueAssets)
+//! trait
+//!
 //! ### Dispatchable Functions
 //!
 //! * [`mint`](./enum.Call.html#variant.mint) - Use the provided commodity info
@@ -47,7 +50,7 @@ use sp_runtime::traits::{Hash, Member};
 use sp_std::{fmt::Debug, vec::Vec};
 
 pub mod nft;
-pub use crate::nft::UniqueAssets;
+pub use crate::nft::{UniqueAssets, LockableUniqueAssets};
 
 pub use pallet::*;
 
@@ -106,13 +109,16 @@ pub mod pallet {
     #[pallet::getter(fn commodities_for_account)]
     pub type CommoditiesForAccount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, Vec<Commodity<T>>>;
 
-    #[pallet::type_value]
-    pub fn DefaultAccountId<T: Config>() -> T::AccountId { Default::default() }
-
     /// A mapping from a commodity ID to the account that owns it.
     #[pallet::storage]
     #[pallet::getter(fn account_for_commodity)]
-    pub type AccountForCommodity<T: Config> = StorageMap<_, Blake2_128Concat, CommodityId<T>, T::AccountId, ValueQuery, DefaultAccountId<T>>;
+    pub type AccountForCommodity<T: Config> = StorageMap<_, Blake2_128Concat, CommodityId<T>, T::AccountId>;
+
+    /// Locked commodities
+    /// also stores the previous owner
+    #[pallet::storage]
+    #[pallet::getter(fn locked_commodities)]
+    pub type LockedCommodities<T: Config> = StorageMap<_, Blake2_128Concat, CommodityId<T>, (T::AccountId, T::CommodityInfo)>;
 
     #[pallet::event]
     #[pallet::metadata(T::AccountId = "AccountId")]
@@ -183,7 +189,7 @@ pub mod pallet {
             commodity_id: CommodityId<T>
         ) -> DispatchResultWithPostInfo {
             let acc = ensure_signed(origin)?;
-            ensure!(acc == <AccountForCommodity<T>>::get(&commodity_id), Error::<T>::NotCommodityOwner);
+            ensure!(Some(acc) == <AccountForCommodity<T>>::get(&commodity_id), Error::<T>::NotCommodityOwner);
 
             <Self as UniqueAssets<_>>::burn(&commodity_id)?;
             Self::deposit_event(Event::Burned(commodity_id));
@@ -207,7 +213,7 @@ pub mod pallet {
             commodity_id: CommodityId<T>
         ) -> DispatchResultWithPostInfo {
             let acc = ensure_signed(origin)?;
-            ensure!(acc == <AccountForCommodity<T>>::get(&commodity_id), Error::<T>::NotCommodityOwner);
+            ensure!(Some(acc) == <AccountForCommodity<T>>::get(&commodity_id), Error::<T>::NotCommodityOwner);
 
             <Self as UniqueAssets<_>>::transfer(&dest_account, &commodity_id)?;
             Self::deposit_event(Event::Transferred(commodity_id, dest_account));
@@ -269,7 +275,7 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
     }
 
     fn owner_of(commodity_id: &CommodityId<T>) -> T::AccountId {
-        Self::account_for_commodity(commodity_id)
+        Self::account_for_commodity(commodity_id).unwrap_or_default()
     }
 
     fn mint(
@@ -367,6 +373,78 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
                 Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, commodity),
                 None => {
                     *commodities = Some(vec![commodity]);
+                }
+            }
+        });
+        AccountForCommodity::<T>::insert(&commodity_id, &dest_account);
+
+        Ok(())
+    }
+}
+
+impl<T: Config> LockableUniqueAssets<T::AccountId> for Pallet<T> {
+    fn lock(commodity_id: &CommodityId<T>) -> dispatch::DispatchResult {
+        let owner = Self::owner_of(commodity_id);
+        ensure!(
+            owner != T::AccountId::default(),
+            Error::<T>::NonexistentCommodity
+        );
+
+        let lock_commodity = (*commodity_id, T::CommodityInfo::default());
+
+        let com = CommoditiesForAccount::<T>::mutate(owner.clone(), |commodities| {
+            let commodities = commodities.as_mut().expect("Owner should exist; qed");
+            let pos = commodities
+                .binary_search(&lock_commodity)
+                .expect("We already checked that we have the correct owner; qed");
+            commodities.remove(pos)
+        });
+        AccountForCommodity::<T>::remove(&commodity_id);
+        LockedCommodities::<T>::insert(commodity_id, (owner, com.1));
+
+        Ok(())
+    }
+
+    fn unlock(commodity_id: &CommodityId<T>) -> dispatch::DispatchResult {
+        let (owner, info) = LockedCommodities::<T>::take(commodity_id).ok_or(Error::<T>::NonexistentCommodity)?;
+
+        let unlock_commodity = (*commodity_id, info);
+        CommoditiesForAccount::<T>::mutate(owner.clone(), |commodities| {
+            match commodities.as_ref().map(|c| c.binary_search(&unlock_commodity)) {
+                Some(Ok(_pos)) => {} // shouldn't happen
+                Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, unlock_commodity),
+                None => {} // shouldn't happen
+            }
+        });
+        AccountForCommodity::<T>::insert(commodity_id, &owner);
+
+        Ok(())
+    }
+
+    fn force_transfer(dest_account: &T::AccountId, commodity_id: &CommodityId<T>) -> dispatch::DispatchResult {
+        let locked = LockedCommodities::<T>::take(commodity_id);
+        if locked.is_none() {
+            return <Self as UniqueAssets<_>>::transfer(dest_account, commodity_id);
+        }
+
+        let (owner, info) = locked.unwrap();
+
+        ensure!(
+            Self::total_for_account(dest_account).unwrap_or(0) < T::UserCommodityLimit::get(),
+            Error::<T>::TooManyCommoditiesForAccount
+        );
+
+        let xfer_commodity = (*commodity_id, info);
+
+        TotalForAccount::<T>::mutate(&owner, |total| *total.as_mut().unwrap() -= 1);
+        TotalForAccount::<T>::mutate(dest_account, |total| *total.get_or_insert(0) += 1);
+
+        CommoditiesForAccount::<T>::mutate(dest_account, |commodities| {
+            match commodities.as_ref().map(|c| c.binary_search(&xfer_commodity)) {
+                Some(Ok(_pos)) => {} // shouldn't happen
+                Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, xfer_commodity),
+                None => {
+                    *commodities = Some(vec![xfer_commodity])
                 }
             }
         });

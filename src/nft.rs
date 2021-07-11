@@ -60,3 +60,26 @@ pub trait UniqueAssets<AccountId> {
     /// - The destination account has already reached the user asset limit.
     fn transfer(dest_account: &AccountId, asset_id: &Self::AssetId) -> DispatchResult;
 }
+
+pub trait LockableUniqueAssets<AccountId>: UniqueAssets<AccountId> {
+    /// Lock an asset
+    /// This method shouldn't decrement the total number of assets for an account
+    /// This method **must** return an error in the following case:
+    /// - The asset with the specified ID does not exist.
+    fn lock(asset_id: &Self::AssetId) -> DispatchResult;
+    /// Unlock an asset
+    /// This method **must** return an error in the following case:
+    /// - The asset with specified ID does not exist.
+    fn unlock(asset_id: &Self::AssetId) -> DispatchResult;
+
+    /// Transfer ownership of a asset to another account, even if its locked
+    /// This is a separate method
+    /// as unlocking and then transferring the asset might take more inserts.
+    ///
+    /// Note that it will do an extra read than usual if the token is not locked
+    ///
+    /// This method **must** return an error in the following case:
+    /// - The asset with the specified ID does not exist.
+    /// - The destination account has already reached the user asset limit.
+    fn force_transfer(dest_account: &AccountId, asset_id: &Self::AssetId) -> DispatchResult;
+}

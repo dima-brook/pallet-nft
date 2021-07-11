@@ -15,7 +15,7 @@ fn mint() {
         assert_eq!(<SUT as UniqueAssets<_>>::total_for_account(&1), 0);
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
-            0
+            None
         );
 
         assert_ok!(SUT::mint(Origin::root(), 1, Vec::<u8>::default()));
@@ -35,7 +35,7 @@ fn mint() {
         assert_eq!(commodities_for_account.as_ref().unwrap()[0].1, Vec::<u8>::default());
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
-            1
+            Some(1)
         );
     });
 }
@@ -106,7 +106,7 @@ fn burn() {
         assert_eq!(SUT::commodities_for_account::<u64>(1), Some(vec![]));
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
-            0
+            None
         );
     });
 }
@@ -157,7 +157,7 @@ fn transfer() {
         assert_eq!(commodities_for_account.unwrap()[0].1, Vec::<u8>::default());
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
-            2
+            Some(2)
         );
     });
 }
@@ -200,7 +200,7 @@ fn transfer_err_max_user() {
         assert_ok!(SUT::mint(Origin::root(), 2, Vec::<u8>::default()));
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
-            2
+            Some(2)
         );
 
         assert_err!(
