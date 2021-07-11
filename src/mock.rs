@@ -1,6 +1,6 @@
 // Creating mock runtime here
 
-use crate::{Module, Config};
+use crate::{Pallet, Config};
 use frame_support::{parameter_types};
 use frame_system as system;
 use sp_core::H256;
@@ -68,7 +68,7 @@ impl Config for Test {
 }
 
 // system under test
-pub type SUT = Module<Test>;
+pub type SUT = Pallet<Test>;
 
 // This function basically just builds a genesis storage key/value store according to
 // our desired mockup.

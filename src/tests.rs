@@ -9,8 +9,8 @@ use sp_core::H256;
 #[test]
 fn mint() {
     new_test_ext().execute_with(|| {
-        assert_eq!(SUT::total(), 0);
-        assert_eq!(SUT::total_for_account(1), 0);
+        assert_eq!(SUT::total(), None);
+        assert_eq!(SUT::total_for_account(1), None);
         assert_eq!(<SUT as UniqueAssets<_>>::total(), 0);
         assert_eq!(<SUT as UniqueAssets<_>>::total_for_account(&1), 0);
         assert_eq!(
@@ -20,19 +20,19 @@ fn mint() {
 
         assert_ok!(SUT::mint(Origin::root(), 1, Vec::<u8>::default()));
 
-        assert_eq!(SUT::total(), 1);
+        assert_eq!(SUT::total(), Some(1));
         assert_eq!(<SUT as UniqueAssets<_>>::total(), 1);
-        assert_eq!(SUT::burned(), 0);
+        assert_eq!(SUT::burned(), None);
         assert_eq!(<SUT as UniqueAssets<_>>::burned(), 0);
-        assert_eq!(SUT::total_for_account(1), 1);
+        assert_eq!(SUT::total_for_account(1), Some(1));
         assert_eq!(<SUT as UniqueAssets<_>>::total_for_account(&1), 1);
         let commodities_for_account = SUT::commodities_for_account::<u64>(1);
-        assert_eq!(commodities_for_account.len(), 1);
+        assert_eq!(commodities_for_account.as_ref().unwrap().len(), 1);
         assert_eq!(
-            commodities_for_account[0].0,
+            commodities_for_account.as_ref().unwrap()[0].0,
             Vec::<u8>::default().blake2_256().into()
         );
-        assert_eq!(commodities_for_account[0].1, Vec::<u8>::default());
+        assert_eq!(commodities_for_account.as_ref().unwrap()[0].1, Vec::<u8>::default());
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
             1
@@ -57,7 +57,7 @@ fn mint_err_dupe() {
 
         assert_err!(
             SUT::mint(Origin::root(), 2, Vec::<u8>::default()),
-            Error::<Test, DefaultInstance>::CommodityExists
+            Error::<Test>::CommodityExists
         );
     });
 }
@@ -70,7 +70,7 @@ fn mint_err_max_user() {
 
         assert_err!(
             SUT::mint(Origin::root(), 1, vec![1]),
-            Error::<Test, DefaultInstance>::TooManyCommoditiesForAccount
+            Error::<Test>::TooManyCommoditiesForAccount
         );
     });
 }
@@ -86,7 +86,7 @@ fn mint_err_max() {
 
         assert_err!(
             SUT::mint(Origin::root(), 6, vec![4]),
-            Error::<Test, DefaultInstance>::TooManyCommodities
+            Error::<Test>::TooManyCommodities
         );
     });
 }
@@ -100,10 +100,10 @@ fn burn() {
             Vec::<u8>::default().blake2_256().into()
         ));
 
-        assert_eq!(SUT::total(), 0);
-        assert_eq!(SUT::burned(), 1);
-        assert_eq!(SUT::total_for_account(1), 0);
-        assert_eq!(SUT::commodities_for_account::<u64>(1), vec![]);
+        assert_eq!(SUT::total(), Some(0));
+        assert_eq!(SUT::burned(), Some(1));
+        assert_eq!(SUT::total_for_account(1), Some(0));
+        assert_eq!(SUT::commodities_for_account::<u64>(1), Some(vec![]));
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
             0
@@ -118,7 +118,7 @@ fn burn_err_not_owner() {
 
         assert_err!(
             SUT::burn(Origin::signed(2), Vec::<u8>::default().blake2_256().into()),
-            Error::<Test, DefaultInstance>::NotCommodityOwner
+            Error::<Test>::NotCommodityOwner
         );
     });
 }
@@ -128,7 +128,7 @@ fn burn_err_not_exist() {
     new_test_ext().execute_with(|| {
         assert_err!(
             SUT::burn(Origin::signed(1), Vec::<u8>::default().blake2_256().into()),
-            Error::<Test, DefaultInstance>::NotCommodityOwner
+            Error::<Test>::NotCommodityOwner
         );
     });
 }
@@ -143,18 +143,18 @@ fn transfer() {
             Vec::<u8>::default().blake2_256().into()
         ));
 
-        assert_eq!(SUT::total(), 1);
-        assert_eq!(SUT::burned(), 0);
-        assert_eq!(SUT::total_for_account(1), 0);
-        assert_eq!(SUT::total_for_account(2), 1);
-        assert_eq!(SUT::commodities_for_account::<u64>(1), vec![]);
+        assert_eq!(SUT::total(), Some(1));
+        assert_eq!(SUT::burned(), None);
+        assert_eq!(SUT::total_for_account(1), Some(0));
+        assert_eq!(SUT::total_for_account(2), Some(1));
+        assert_eq!(SUT::commodities_for_account::<u64>(1), Some(vec![]));
         let commodities_for_account = SUT::commodities_for_account::<u64>(2);
-        assert_eq!(commodities_for_account.len(), 1);
+        assert_eq!(commodities_for_account.as_ref().unwrap().len(), 1);
         assert_eq!(
-            commodities_for_account[0].0,
+            commodities_for_account.as_ref().unwrap()[0].0,
             Vec::<u8>::default().blake2_256().into()
         );
-        assert_eq!(commodities_for_account[0].1, Vec::<u8>::default());
+        assert_eq!(commodities_for_account.unwrap()[0].1, Vec::<u8>::default());
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
             2
@@ -173,7 +173,7 @@ fn transfer_err_not_owner() {
                 2,
                 Vec::<u8>::default().blake2_256().into()
             ),
-            Error::<Test, DefaultInstance>::NotCommodityOwner
+            Error::<Test>::NotCommodityOwner
         );
     });
 }
@@ -187,7 +187,7 @@ fn transfer_err_not_exist() {
                 2,
                 Vec::<u8>::default().blake2_256().into()
             ),
-            Error::<Test, DefaultInstance>::NotCommodityOwner
+            Error::<Test>::NotCommodityOwner
         );
     });
 }
@@ -209,7 +209,7 @@ fn transfer_err_max_user() {
                 1,
                 Vec::<u8>::default().blake2_256().into()
             ),
-            Error::<Test, DefaultInstance>::TooManyCommoditiesForAccount
+            Error::<Test>::TooManyCommoditiesForAccount
         );
     });
 }
