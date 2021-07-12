@@ -26,13 +26,13 @@ fn mint() {
         assert_eq!(<SUT as UniqueAssets<_>>::burned(), 0);
         assert_eq!(SUT::total_for_account(1), Some(1));
         assert_eq!(<SUT as UniqueAssets<_>>::total_for_account(&1), 1);
-        let commodities_for_account = SUT::commodities_for_account::<u64>(1);
-        assert_eq!(commodities_for_account.as_ref().unwrap().len(), 1);
+        let commodities_for_account = <SUT as UniqueAssets<u64>>::assets_for_account(&1);
+        assert_eq!(commodities_for_account.len(), 1);
         assert_eq!(
-            commodities_for_account.as_ref().unwrap()[0].0,
+            commodities_for_account[0].0,
             Vec::<u8>::default().blake2_256().into()
         );
-        assert_eq!(commodities_for_account.as_ref().unwrap()[0].1, Vec::<u8>::default());
+        assert_eq!(commodities_for_account[0].1, Vec::<u8>::default());
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
             Some(1)
@@ -103,7 +103,7 @@ fn burn() {
         assert_eq!(SUT::total(), Some(0));
         assert_eq!(SUT::burned(), Some(1));
         assert_eq!(SUT::total_for_account(1), Some(0));
-        assert_eq!(SUT::commodities_for_account::<u64>(1), Some(vec![]));
+        assert_eq!(<SUT as UniqueAssets<u64>>::assets_for_account(&1), vec![]);
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
             None
@@ -147,14 +147,14 @@ fn transfer() {
         assert_eq!(SUT::burned(), None);
         assert_eq!(SUT::total_for_account(1), Some(0));
         assert_eq!(SUT::total_for_account(2), Some(1));
-        assert_eq!(SUT::commodities_for_account::<u64>(1), Some(vec![]));
-        let commodities_for_account = SUT::commodities_for_account::<u64>(2);
-        assert_eq!(commodities_for_account.as_ref().unwrap().len(), 1);
+        assert_eq!(SUT::assets_for_account(&1u64), vec![]);
+        let commodities_for_account = SUT::assets_for_account(&2u64);
+        assert_eq!(commodities_for_account.len(), 1);
         assert_eq!(
-            commodities_for_account.as_ref().unwrap()[0].0,
+            commodities_for_account[0].0,
             Vec::<u8>::default().blake2_256().into()
         );
-        assert_eq!(commodities_for_account.unwrap()[0].1, Vec::<u8>::default());
+        assert_eq!(commodities_for_account[0].1, Vec::<u8>::default());
         assert_eq!(
             SUT::account_for_commodity::<H256>(Vec::<u8>::default().blake2_256().into()),
             Some(2)

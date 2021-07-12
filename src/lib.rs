@@ -47,7 +47,7 @@ use frame_support::{
 };
 use frame_system::ensure_signed;
 use sp_runtime::traits::{Hash, Member};
-use sp_std::{fmt::Debug, vec::Vec, vec};
+use sp_std::{fmt::Debug, vec::Vec, collections::btree_map::BTreeMap};
 
 pub mod nft;
 pub use crate::nft::{UniqueAssets, LockableUniqueAssets};
@@ -107,7 +107,7 @@ pub mod pallet {
     /// A mapping from an account to a list of all of the commodities of this type that are owned by it.
     #[pallet::storage]
     #[pallet::getter(fn commodities_for_account)]
-    pub type CommoditiesForAccount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, Vec<Commodity<T>>>;
+    pub type CommoditiesForAccount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, BTreeMap<CommodityId<T>, T::CommodityInfo>>;
 
     /// A mapping from a commodity ID to the account that owns it.
     #[pallet::storage]
@@ -272,6 +272,8 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
 
     fn assets_for_account(account: &T::AccountId) -> Vec<Commodity<T>> {
         Self::commodities_for_account(account).unwrap_or_default()
+            .into_iter()
+            .collect()
     }
 
     fn owner_of(commodity_id: &CommodityId<T>) -> T::AccountId {
@@ -304,13 +306,8 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
         Total::<T>::mutate(|total| *total.get_or_insert(0) += 1);
         TotalForAccount::<T>::mutate(owner_account, |total| *total.get_or_insert(0) += 1);
         CommoditiesForAccount::<T>::mutate(owner_account, |commodities| {
-            match commodities.as_ref().map(|c| c.binary_search(&new_commodity)) {
-                Some(Ok(_pos)) => {} // should never happen
-                Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, new_commodity),
-                None => {
-                    *commodities = Some(vec![new_commodity]);
-                }
-            }
+            commodities.get_or_insert_with(Default::default)
+                .insert(new_commodity.0, new_commodity.1);
         });
         AccountForCommodity::<T>::insert(commodity_id, &owner_account);
 
@@ -324,17 +321,12 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
             Error::<T>::NonexistentCommodity
         );
 
-        let burn_commodity = (*commodity_id, <T as Config>::CommodityInfo::default());
-
         Total::<T>::mutate(|total| *total.get_or_insert(0) -= 1);
         Burned::<T>::mutate(|total| *total.get_or_insert(0) += 1);
         TotalForAccount::<T>::mutate(&owner, |total| *total.get_or_insert(0) -= 1);
         CommoditiesForAccount::<T>::mutate(owner, |commodities| {
             let commodities = commodities.as_mut().expect("Owner should exist; qed");
-            let pos = commodities
-                .binary_search(&burn_commodity)
-                .expect("We already checked that we have the correct owner; qed");
-            commodities.remove(pos);
+            commodities.remove(commodity_id);
         });
         AccountForCommodity::<T>::remove(&commodity_id);
 
@@ -356,25 +348,15 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
             Error::<T>::TooManyCommoditiesForAccount
         );
 
-        let xfer_commodity = (*commodity_id, <T as Config>::CommodityInfo::default());
-
         TotalForAccount::<T>::mutate(&owner, |total| *total.get_or_insert(0) -= 1);
         TotalForAccount::<T>::mutate(dest_account, |total| *total.get_or_insert(0) += 1);
         let commodity = CommoditiesForAccount::<T>::mutate(owner, |commodities| {
             let commodities = commodities.as_mut().expect("Owner should exist; qed");
-            let pos = commodities
-                .binary_search(&xfer_commodity)
-                .expect("We already checked that we have the correct owner; qed");
-            commodities.remove(pos)
+            commodities.remove_entry(commodity_id).expect("already checked commodity exists; qed")
         });
         CommoditiesForAccount::<T>::mutate(dest_account, |commodities| {
-            match commodities.as_ref().map(|c| c.binary_search(&commodity)) {
-                Some(Ok(_pos)) => {} // should never happen
-                Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, commodity),
-                None => {
-                    *commodities = Some(vec![commodity]);
-                }
-            }
+            commodities.get_or_insert_with(Default::default)
+                .insert(commodity.0, commodity.1);
         });
         AccountForCommodity::<T>::insert(&commodity_id, &dest_account);
 
@@ -390,14 +372,9 @@ impl<T: Config> LockableUniqueAssets<T::AccountId> for Pallet<T> {
             Error::<T>::NonexistentCommodity
         );
 
-        let lock_commodity = (*commodity_id, T::CommodityInfo::default());
-
         let com = CommoditiesForAccount::<T>::mutate(owner.clone(), |commodities| {
             let commodities = commodities.as_mut().expect("Owner should exist; qed");
-            let pos = commodities
-                .binary_search(&lock_commodity)
-                .expect("We already checked that we have the correct owner; qed");
-            commodities.remove(pos)
+            commodities.remove_entry(commodity_id).expect("already checked commodity exists; qed")
         });
         AccountForCommodity::<T>::remove(&commodity_id);
         LockedCommodities::<T>::insert(commodity_id, (owner, com.1));
@@ -410,11 +387,8 @@ impl<T: Config> LockableUniqueAssets<T::AccountId> for Pallet<T> {
 
         let unlock_commodity = (*commodity_id, info);
         CommoditiesForAccount::<T>::mutate(owner.clone(), |commodities| {
-            match commodities.as_ref().map(|c| c.binary_search(&unlock_commodity)) {
-                Some(Ok(_pos)) => {} // shouldn't happen
-                Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, unlock_commodity),
-                None => {} // shouldn't happen
-            }
+            commodities.as_mut().expect("commodity list should be initialized; qed")
+                .insert(unlock_commodity.0, unlock_commodity.1);
         });
         AccountForCommodity::<T>::insert(commodity_id, &owner);
 
@@ -440,13 +414,8 @@ impl<T: Config> LockableUniqueAssets<T::AccountId> for Pallet<T> {
         TotalForAccount::<T>::mutate(dest_account, |total| *total.get_or_insert(0) += 1);
 
         CommoditiesForAccount::<T>::mutate(dest_account, |commodities| {
-            match commodities.as_ref().map(|c| c.binary_search(&xfer_commodity)) {
-                Some(Ok(_pos)) => {} // shouldn't happen
-                Some(Err(pos)) => commodities.as_mut().unwrap().insert(pos, xfer_commodity),
-                None => {
-                    *commodities = Some(vec![xfer_commodity])
-                }
-            }
+            commodities.get_or_insert_with(Default::default)
+                .insert(xfer_commodity.0, xfer_commodity.1);
         });
         AccountForCommodity::<T>::insert(&commodity_id, &dest_account);
 
