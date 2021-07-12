@@ -47,7 +47,7 @@ use frame_support::{
 };
 use frame_system::ensure_signed;
 use sp_runtime::traits::{Hash, Member};
-use sp_std::{fmt::Debug, vec::Vec};
+use sp_std::{fmt::Debug, vec::Vec, vec};
 
 pub mod nft;
 pub use crate::nft::{UniqueAssets, LockableUniqueAssets};
@@ -117,7 +117,7 @@ pub mod pallet {
     /// Locked commodities
     /// also stores the previous owner
     #[pallet::storage]
-    #[pallet::getter(fn locked_commodities)]
+    #[pallet::getter(fn locked_commodity)]
     pub type LockedCommodities<T: Config> = StorageMap<_, Blake2_128Concat, CommodityId<T>, (T::AccountId, T::CommodityInfo)>;
 
     #[pallet::event]

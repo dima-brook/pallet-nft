@@ -11,18 +11,20 @@
 //!
 //! This abstraction is implemented by [pallet_commodities::Module](../struct.Module.html).
 
+use codec::Codec;
 use frame_support::{
     dispatch::{result::Result, DispatchError, DispatchResult},
-    traits::Get,
+    traits::{Get, MaxEncodedLen},
 };
-use sp_std::vec::Vec;
+use sp_runtime::traits::MaybeSerializeDeserialize;
+use sp_std::{vec::Vec, fmt::Debug};
 
 /// An interface over a set of unique assets.
 /// Assets with equivalent attributes (as defined by the AssetInfo type) **must** have an equal ID
 /// and assets with different IDs **must not** have equivalent attributes.
 pub trait UniqueAssets<AccountId> {
     /// The type used to identify unique assets.
-    type AssetId;
+    type AssetId: Debug + Codec + MaxEncodedLen + MaybeSerializeDeserialize + Clone + PartialEq;
     /// The attributes that distinguish unique assets.
     type AssetInfo;
     /// The maximum number of this type of asset that may exist (minted - burned).
