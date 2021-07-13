@@ -39,7 +39,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::FullCodec;
+use codec::{FullCodec, Encode};
 use frame_support::{
     dispatch, ensure,
     traits::{EnsureOrigin, Get},
@@ -280,11 +280,27 @@ impl<T: Config> UniqueAssets<T::AccountId> for Pallet<T> {
         Self::account_for_commodity(commodity_id).unwrap_or_default()
     }
 
+    fn asset_info(commodity_id: &CommodityId<T>) -> Result<T::CommodityInfo, dispatch::DispatchError> {
+        let owner = Self::owner_of(commodity_id);
+        ensure!(
+            owner != T::AccountId::default(),
+            Error::<T>::NonexistentCommodity
+        );
+
+        Ok(<CommoditiesForAccount<T>>::get(&owner)
+            .expect("already checked that commodity exists for owner; qed")
+            .get(commodity_id)
+            .expect("already checked that commodity exists for owner; qed")
+            .clone())
+    }
+
     fn mint(
         owner_account: &T::AccountId,
         commodity_info: <T as Config>::CommodityInfo,
     ) -> dispatch::result::Result<CommodityId<T>, dispatch::DispatchError> {
-        let commodity_id = T::Hashing::hash_of(&commodity_info);
+        let mut raw = commodity_info.encode();
+        raw.append(&mut owner_account.encode());
+        let commodity_id = T::Hashing::hash(&raw);
 
         ensure!(
             !AccountForCommodity::<T>::contains_key(&commodity_id),

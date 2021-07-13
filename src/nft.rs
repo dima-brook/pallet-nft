@@ -26,7 +26,7 @@ pub trait UniqueAssets<AccountId> {
     /// The type used to identify unique assets.
     type AssetId: Debug + Codec + MaxEncodedLen + MaybeSerializeDeserialize + Clone + PartialEq;
     /// The attributes that distinguish unique assets.
-    type AssetInfo;
+    type AssetInfo: MaybeSerializeDeserialize + Codec + Debug + Default + Clone + PartialEq;
     /// The maximum number of this type of asset that may exist (minted - burned).
     type AssetLimit: Get<u128>;
     /// The maximum number of this type of asset that any single account may own.
@@ -42,6 +42,10 @@ pub trait UniqueAssets<AccountId> {
     fn assets_for_account(account: &AccountId) -> Vec<(Self::AssetId, Self::AssetInfo)>;
     /// The ID of the account that owns an asset.
     fn owner_of(asset_id: &Self::AssetId) -> AccountId;
+    /// The data of an NFT
+    /// This method **must** return an error in the following case(s):
+    /// - The asset with the specified ID does not exist.
+    fn asset_info(commodity_id: &Self::AssetId) -> Result<Self::AssetInfo, DispatchError>;
 
     /// Use the provided asset info to create a new unique asset for the specified user.
     /// This method **must** return an error in the following cases:
